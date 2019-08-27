@@ -34,17 +34,20 @@ fn main() {
         .iter()
         .map(|x| x.as_os_str())
         .chain(default_args.iter().map(OsStr::new));
-    let iftop = Command::new("/usr/sbin/iftop")
-        .stdout(Stdio::piped())
-        .args(iftop_args)
-        .spawn()
-        .unwrap();
+    let mut iftop_command = Command::new("/usr/sbin/iftop");
+    iftop_command.stdout(Stdio::piped()).args(iftop_args);
 
-    let input = BufReader::new(iftop.stdout.unwrap());
-    let mut lines = input.lines().map(Result::unwrap);
+    loop {
+        let mut iftop = iftop_command.spawn().unwrap();
 
-    while let Some(r) = timed_parse(&mut lines) {
-        println!("{}", serde_json::to_string(&r).unwrap());
+        let input = BufReader::new(iftop.stdout.take().unwrap());
+        let mut lines = input.lines().map(Result::unwrap);
+
+        while let Some(r) = timed_parse(&mut lines) {
+            println!("{}", serde_json::to_string(&r).unwrap());
+        }
+
+        iftop.wait().unwrap();
     }
 }
 
