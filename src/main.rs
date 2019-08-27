@@ -3,6 +3,7 @@
 #[macro_use]
 extern crate lazy_static;
 
+use chrono::{DateTime, Utc};
 use regex::Regex;
 use serde_derive::Serialize;
 use std::env;
@@ -14,13 +15,19 @@ lazy_static! {
     static ref R_SEPARATOR: Regex = Regex::new(r"^-+$").unwrap();
     static ref R_END: Regex = Regex::new(r"^=+$").unwrap();
     //   1 2605:a601:a9b1:7300:49cf:6e19:9c9b:d2ac  =>         0B       709B       457B     20.3KB
-    static ref R_FIRSTLINE: Regex = Regex::new(r"(\d)\s+(\S+)\s+=>\s+(\S+)B\s+(\S+)B\s+(\S+)B\s+(\S+)B").unwrap();
+    static ref R_FIRSTLINE: Regex = Regex::new(r"(\d+)\s+(\S+)\s+=>\s+(\S+)B\s+(\S+)B\s+(\S+)B\s+(\S+)B").unwrap();
     //     2606:4700:20::6819:9766                  <=         0B     5.69KB     1.71KB     71.4KB
     static ref R_SECONDLINE: Regex = Regex::new(r"(\S+)\s+<=\s+(\S+)B\s+(\S+)B\s+(\S+)B\s+(\S+)B").unwrap();
 }
 
 fn main() {
-    let default_args = ["-t", "-B", "-o", "40s", "-s", "40"];
+    let default_args = [
+        "-t", // text output
+        "-B", // output bytes, not bits
+        "-n", // no DNS reverse lookup
+        "-o", "40s", // sort by 40s column
+        "-s", "40", // gather for 40 seconds and then quit
+    ];
     let passed_args: Vec<OsString> = env::args_os().skip(1).collect();
 
     let iftop_args = passed_args
@@ -36,7 +43,7 @@ fn main() {
     let input = BufReader::new(iftop.stdout.unwrap());
     let mut lines = input.lines().map(Result::unwrap);
 
-    while let Some(r) = parse_input(&mut lines) {
+    while let Some(r) = timed_parse(&mut lines) {
         println!("{}", serde_json::to_string(&r).unwrap());
     }
 }
@@ -68,9 +75,9 @@ fn parse_input<S: AsRef<str>, T: Iterator<Item = S>>(lines: &mut T) -> Option<Ve
                         let record = Record {
                             rank: firstline.get(1).unwrap().as_str().parse().unwrap(),
                             local_name: firstline.get(2).unwrap().as_str().to_string(),
-                            local_40s_bytes: firstline.get(5).unwrap().as_str().to_string(),
+                            outbound_40s_bytes: firstline.get(5).unwrap().as_str().to_string(),
                             remote_name: secondline.get(1).unwrap().as_str().to_string(),
-                            remote_40s_bytes: secondline.get(4).unwrap().as_str().to_string(),
+                            inbound_40s_bytes: secondline.get(4).unwrap().as_str().to_string(),
                         };
 
                         r.push(record);
@@ -93,11 +100,24 @@ fn parse_input<S: AsRef<str>, T: Iterator<Item = S>>(lines: &mut T) -> Option<Ve
     records
 }
 
+fn timed_parse<S: AsRef<str>, T: Iterator<Item = S>>(lines: &mut T) -> Option<Output> {
+    let start_time = Utc::now();
+    let r = parse_input(lines);
+
+    r.map(|records| Output {
+        start_time,
+        records,
+        end_time: Utc::now(),
+    })
+}
+
 #[test]
 fn test_parse_state() {
     let input = include_str!("../test/input1.txt");
     let mut lines = input.lines();
-    parse_input(&mut lines).unwrap();
+    let r = parse_input(&mut lines).unwrap();
+    let output = include_str!("../test/output1.txt").trim();
+    assert_eq!(output, serde_json::to_string(&r).unwrap());
 }
 
 enum ParseState {
@@ -113,7 +133,14 @@ enum ParseState {
 struct Record {
     rank: u64,
     local_name: String,
-    local_40s_bytes: String,
+    outbound_40s_bytes: String,
     remote_name: String,
-    remote_40s_bytes: String,
+    inbound_40s_bytes: String,
+}
+
+#[derive(Debug, Serialize)]
+struct Output {
+    start_time: DateTime<Utc>,
+    records: Vec<Record>,
+    end_time: DateTime<Utc>,
 }
