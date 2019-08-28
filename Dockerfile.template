@@ -50,7 +50,7 @@ RUN cargo build --release
 #
 # RUN rm -rf target/release/foo-bar target/release/deps/foo_bar-*
 #                              ^                           ^
-RUN rm -rf target/release/hello* target/release/deps/hello-*
+RUN rm -rf target/release/ifsummary* target/release/deps/ifsummary-*
 
 ################################################################################
 # Builder
@@ -93,4 +93,4 @@ COPY --from=builder /build/app/target/release/ifsummary .
 # COPY --from=builder /build/app/assets assets
 
 # Launch application
-CMD ["./ifsummary"]
+CMD ["sh", "./ifsummary", ">", "/logs/ifsummary.log"]
